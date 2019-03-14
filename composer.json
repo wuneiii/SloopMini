@@ -1,0 +1,21 @@
+{
+  "name": "sloop/sloop-mini",
+  "type": "library",
+  "description": "sloop mini",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Xing Xiaolong",
+      "email": "xiaolongok@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": ">=5.4"
+  },
+  "autoload": {
+    "psr-0": {
+      "SloopMini": "src"
+    }
+  }
+}
