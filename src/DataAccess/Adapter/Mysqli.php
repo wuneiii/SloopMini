@@ -3,85 +3,63 @@
 namespace SloopMini\DataAccess\Adapter;
 
 
-class Mysqli {
+class Mysqli extends BaseDriver {
 
 
-    private $currentConn;
+    private $link;
 
-    private $lastErrMsg = '';
-    private $logMsg     = array();
 
-    public function getLastErrorMsg() {
-        return $this->lastErrMsg;
-    }
-
-    private function addErr($msg, $csm = 0) {
-        $this->lastErrMsg = $msg;
-        $this->logMsg[] = array(
-            'ts'  => microtime(true),
-            'msg' => $msg,
-            'csm' => $csm,
+    public function connect($conf) {
+        if (!isset($conf['port'])) {
+            $conf['port'] = 3306;
+        }
+        $conn = mysqli_connect(
+            $conf['host'],
+            $conf['username'],
+            $conf['password'],
+            $conf['dbname'],
+            $conf['port']
         );
-    }
-
-
-    public function connect($arrConfig) {
-        $conn = mysqli_connect($arrConfig['host'], $arrConfig['username'], $arrConfig['password']);
         if (!$conn) {
-            $this->addErr('connection fail');
+            $this->logErr('connection fail.' . mysqli_connect_error());
             return false;
         }
-        if (!mysqli_select_db($conn, $arrConfig['dbname'])) {
-            $this->addErr('select db fail');
+        if (!mysqli_select_db($conn, $conf['dbname'])) {
+            $this->logErr('select db fail');
             return false;
         }
         if (!mysqli_query($conn, 'SET NAMES UTF8;')) {
             return false;
         }
 
-        $this->currentConn = $conn;
+        $this->link = $conn;
         return true;
 
     }
 
-
-    public function fetchArray($result, $result_type = MYSQLI_ASSOC) {
-        return mysqli_fetch_array($result, $result_type);
+    public function close() {
+        return mysqli_close($this->link);
     }
 
-    public function query($sql) {
+
+    private function execSqlReturnQuery($sql) {
         $start = microtime(true);
-        if (!($result = mysqli_query($this->currentConn, $sql))) {
-            $this->addErr('mysql query error:' . $sql . '[' . mysqli_error($this->currentConn) . ']');
-            var_dump($this->lastErrMsg);
+        $qry = mysqli_query($this->link, $sql);
+        $end = microtime(true);
+        $this->logSql($sql, $end - $start, $this->link->info);
+        if (!$qry) {
+            $this->logErr('mysql query error:' . $sql . '[' . mysqli_error($this->link) . ']');
             return false;
         }
-        $end = microtime(true);
-        $this->addErr($sql, $end - $start);
-        return $result;
+
+        return $qry;
     }
 
-    public function startTransaction() {
-        $this->query('START TRANSACTION');
+
+    private function insertId() {
+        return mysqli_insert_id($this->link);
     }
 
-    public function commitTransaction() {
-        $this->query('COMMIT');
-    }
-
-    public function rollbackTransaction() {
-        $this->query('ROLLBACK');
-    }
-
-    public function insertId() {
-        return mysqli_insert_id($this->currentConn);
-    }
-
-    public function fetchOne($sql) {
-        $result = $this->query($sql);
-        $record = $this->fetchArray($result);
-        return $record;
-    }
 
     public function numRows($query) {
         $query = mysqli_num_rows($query);
@@ -98,16 +76,89 @@ class Mysqli {
     }
 
     public function version() {
-        return mysqli_get_server_info($this->currentConn);
+        return mysqli_get_server_info($this->link);
     }
 
-    public function close() {
-        return mysqli_close($this->currentConn);
+
+    public function insert($sql) {
+
+        $qry = $this->execSqlReturnQuery($sql);
+
+        if ($qry) {
+            return $this->insertId();
+        }
+        return false;
+
     }
 
-    public function runCountSql($sql) {
-        $qry = $this->query($sql);
-        $rs = $this->fetchArray($qry, MYSQLI_ASSOC);
-        return $rs['count'];
+    public function update($sql) {
+
+        if ($this->execSqlReturnQuery($sql)) {
+            return mysqli_affected_rows($this->link);
+        }
+        return false;
+
+    }
+
+    public function delete($sql) {
+        if ($this->execSqlReturnQuery($sql)) {
+            return mysqli_affected_rows($this->link);
+        }
+        return false;
+    }
+
+    public function getManyRow($sql) {
+        $ret = array();
+        if (!$qry = $this->execSqlReturnQuery($sql)) {
+            return false;
+        }
+        while ($rs = mysqli_fetch_assoc($qry)) {
+            $ret[] = $rs;
+        }
+        return $ret;
+    }
+
+    public function getOneRow($sql) {
+        if (!$qry = $this->execSqlReturnQuery($sql)) {
+            return false;
+        }
+        return mysqli_fetch_assoc($qry);
+    }
+
+    public function getInt($sql) {
+        if (!$qry = $this->execSqlReturnQuery($sql)) {
+            return false;
+        }
+        $res = mysqli_fetch_assoc($qry);
+        if (!$res) {
+            return false;
+        }
+        $res = array_values($res);
+        return intval($res[0]);
+    }
+
+    public function getString($sql) {
+        if (!$qry = $this->execSqlReturnQuery($sql)) {
+            return false;
+        }
+        $res = mysqli_fetch_assoc($qry);
+        if (!$res) {
+            return false;
+        }
+        $res = array_values($res);
+        return strval($res[0]);
+    }
+
+
+    public function txStart() {
+        $this->query('START TRANSACTION');
+    }
+
+    public function txCommit() {
+        $this->query('COMMIT');
+    }
+
+    public function txRollback() {
+        $this->query('ROLLBACK');
     }
 }

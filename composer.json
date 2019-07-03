@@ -1,5 +1,6 @@
 {
   "name": "sloop/sloop-mini",
+  "version": "0.9.1",
   "type": "library",
   "description": "sloop mini",
   "license": "MIT",
@@ -11,10 +12,11 @@
     }
   ],
   "require": {
-    "php": ">=5.4"
+    "php": ">=5.4",
+    "ext-mysqli": "*"
   },
   "autoload": {
-    "psr-0": {
+    "psr-4": {
       "SloopMini": "src"
     }
   }

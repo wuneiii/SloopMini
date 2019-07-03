@@ -45,7 +45,14 @@ class SqlFactory {
     }
 
     public function where($where) {
-        $this->condition = $where;
+        if (is_string($where)) {
+            $this->condition[] = $where;
+        }
+        if (is_array($where)) {
+            foreach ($where as $item) {
+                $this->condition[] = $item;
+            }
+        }
     }
 
     public function orderBy($fieldName, $sort = 'DESC') {
@@ -79,6 +86,8 @@ class SqlFactory {
                 $sql = 'DELETE FROM ' . $this->table;
                 if ($this->condition) {
                     $sql .= ' WHERE ' . $this->getWhere();
+                } else {
+                    return false;
                 }
                 return $sql;
             case self::SQL_SELECT:

@@ -29,27 +29,30 @@ class ClassLoader {
 
     public function sloopAutoLoader($className) {
 
+
         if (substr($className, 0, 1) != '\\') {
             $className = '\\' . $className;
         }
 
+        $testNs = $className;
+        do {
+            $pos = strrpos($testNs, '\\');
+            $testNs = substr($testNs, 0, $pos);
 
-        foreach ($this->nsPrefixMap as $nsPrefix => $path) {
-            $clsPrefix = substr($className, 0, strlen($nsPrefix));
 
-            if ($clsPrefix == $nsPrefix) {
-
-                if (substr($path, strlen($path) - 1) != '/') {
-                    $path .= '/';
-                }
-
-                $realClassFile = $path . substr($className, strlen($nsPrefix)) . '.php';
+            if (isset($this->nsPrefixMap[$testNs . '\\'])) {
+                $fileName = substr($className, $pos);
+                $realClassFile = $this->nsPrefixMap[$testNs . '\\'] . $fileName . '.php';
                 $realClassFile = str_replace('\\', '/', $realClassFile);
-
-                include_once $realClassFile;
-
-
+                break;
             }
-        }
+
+            if ($pos === false) {
+                var_dump('Class Not Found:' . $className);
+                exit;
+            }
+        } while (true);
+
+        @include_once $realClassFile;
     }
 }

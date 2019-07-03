@@ -3,103 +3,61 @@
 namespace SloopMini\DataAccess;
 
 
-abstract class Model extends ModelBase {
+abstract class Model extends ModelObject {
 
-    protected $condition = array();
+    protected $where      = array();
+    protected $limitStart = 0;
+    protected $limitStep  = 0;
+    protected $orderBy    = '';
+    protected $orderSort  = ' DESC ';
 
 
-    protected function init($table, $pk, $field) {
+    private $dbConnection;
+
+
+    protected function init($table, $pk, $fieldList, $dataSource = 'default') {
         $this->tableName = $table;
         $this->primaryKey = $pk;
-        $this->fields = $field;
+        $this->fields = $fieldList;
+        $this->dataSourceName = $dataSource;
+
+        $this->dbConnection = DbFactory::getInstance()->getConnection($this->dataSourceName);
+        if (!$this->dbConnection) {
+            ErrorCode::logError(ErrorCode::DB_CONN_FAIL);
+            return false;
+        }
+
     }
 
     public function isInit() {
         if (!$this->tableName || !$this->fields) {
+            $this->logError(ErrorCode::MODEL_NOT_INIT);
             return false;
         }
         return true;
     }
 
-
     /**
-     * 查找所有符合条件的.失败返回空model_set
-     * 包含所有字段条件，setXX增加的order，where，limit函数都等
-     * @param bool $retArray
-     * @return array|ModelIterator
+     * 查询一个数据集
+     * @return bool
      */
-    public function findAllMatch($retArray = false) {
+    public function selectAll() {
         if (!$this->isInit()) {
-            die('model not init');
+            return false;
         }
-        $condition = $this->condition;
+
         $sqlFactory = new SqlFactory();
         $sqlFactory->selectFrom($this->tableName);
+        $sqlFactory->where($this->getWhere());
+        $sqlFactory->orderBy($this->orderBy, $this->orderSort);
 
-        if ($this->values) {
-            $where = array();
-            foreach ($this->values as $k => $v) {
-                if ($v === null) {
-                    continue;
-                }
-                $where[] = array(
-                    $k,
-                    $v
-                );
-            }
-            if (isset($condition['where'])) {
-                $where[] = $condition['where'];
-            }
-            $sqlFactory->where($where);
-        }
-        if (isset($condition['orderField'])) {
-            $sqlFactory->orderBy($condition['orderField'], $condition['orderSort']);
-        }
-        if (isset($condition['limitStep'])) {
-            $sqlFactory->limit($condition['limitStep'], $condition['limitStart']);
+        if ($this->limitStep) {
+            $sqlFactory->limit($this->limitStep, $this->limitStart);
         }
 
-        if ($retArray) {
-            return $this->getArrayBySql($sqlFactory->getSql());
-        }
+        $res = $this->dbConnection->getManyRow($sqlFactory->getSql());
 
-        return $this->getModelSetBySql($sqlFactory->getSql());
-    }
-
-    private function getArrayBySql($sql) {
-        $retArray = array();
-        $db = Db::getConnection();
-        $qry = $db->query($sql);
-        if ($qry) {
-            while ($rs = $db->fetchArray($qry)) {
-                $retArray[] = $rs;
-            }
-        }
-        return $retArray;
-    }
-
-    /**
-     *
-     *  * 内部使用，给一个sql，返回一个model_set
-     *
-     * @note 最好在内部使用，因为内部生成的sql查到的字段，都能用本model来保存。\
-     *       如果让外部自由传入sql，可能会查到不包含在本model中的字段，model会丢弃那些数据
-     *
-     * @param $sql
-     * @return ModelIterator
-     */
-    private function getModelSetBySql($sql) {
-
-        $modelSet = new ModelIterator();
-        $db = Db::getConnection();
-        $qry = $db->query($sql);
-        if ($qry) {
-            $modelName = get_class($this);
-            while ($rs = $db->fetchArray($qry)) {
-                $modelSet->addArray($rs, $modelName);
-            }
-        }
-        return $modelSet;
+        return $res;
     }
 
 
@@ -109,37 +67,26 @@ abstract class Model extends ModelBase {
      * @param $orderSort
      * @return bool
      */
-    public function loadLastMatch($orderField, $orderSort = 'desc') {
-        if (!$this->keyExists($orderField)) {
+    public function selectLastOne($orderField, $orderSort = 'desc') {
+        if (!$this->isFieldExists($orderField)) {
             $orderField = $this->primaryKey;
         }
 
-
-        $where = array();
-        if ($this->values) {
-            foreach ($this->values as $k => $v) {
-                if ($v === null) continue;
-                $where[] = " `$k` ='$v' ";
-            }
-            if (isset($this->condition['where'])) {
-                $where[] = $this->condition['where'];
-            }
-        }
         // 不能清全表
-        if (!$where) {
+        if (!$this->getWhere()) {
+            $this->logError(ErrorCode::CANNOT_SCAN_ALL_TABLE);
             return false;
         }
 
         $sqlFactory = new SqlFactory();
         $sqlFactory->selectFrom($this->tableName);
         $sqlFactory->orderBy($orderField, $orderSort);
-        $sqlFactory->where($where);
+        $sqlFactory->where($this->where);
 
-        $db = Db::getConnection();
-        $qry = $db->query($sqlFactory->getSql());
-        if ($qry && $rs = $db->fetchArray($qry)) {
-            $this->fillByArray($rs);
-            return true;
+        $res = $this->dbConnection->getOneRow($sqlFactory->getSql());
+        if ($res) {
+            $this->setByArray($res);
+            return $res;
         }
         return false;
     }
@@ -150,12 +97,12 @@ abstract class Model extends ModelBase {
      * @param $pk
      * @return bool|mixed
      */
-    public function loadByPk($pk) {
+    public function selectByPk($pk) {
         if (!$pk || !$this->primaryKey) {
             return false;
         }
 
-        return $this->loadByUniqueKey($this->primaryKey, $pk);
+        return $this->selectByUniqueField($this->primaryKey, $pk);
     }
 
     /**
@@ -164,9 +111,9 @@ abstract class Model extends ModelBase {
      * @param $value
      * @return bool
      */
-    public function loadByUniqueKey($key, $value) {
+    public function selectByUniqueField($key, $value) {
 
-        if (!$this->keyExists($key)) {
+        if (!$this->isFieldExists($key)) {
             return false;
         }
 
@@ -174,16 +121,14 @@ abstract class Model extends ModelBase {
         $sqlFactory->selectFrom($this->tableName);
         $sqlFactory->where(sprintf("`%s`='%s'", $key, $value));
 
-        $db = Db::getConnection();
-        $qry = $db->query($sqlFactory->getSql());
-        if (!$qry) {
+        $res = $this->dbConnection->getOneRow($sqlFactory->getSql());
+
+
+        if (!$res) {
             return false;
         }
-        if (!$rs = $db->fetchArray($qry)) {
-            return false;
-        }
-        $this->fillByArray($rs);;
-        return true;
+        $this->setByArray($res);
+        return $res;
     }
 
 
@@ -193,7 +138,7 @@ abstract class Model extends ModelBase {
      * @return bool|resource
      */
     public function deleteByPk($pk) {
-        return $this->deleteByUniqueKey($this->primaryKey, $pk);
+        return $this->deleteByUniqueField($this->primaryKey, $pk);
     }
 
 
@@ -203,55 +148,39 @@ abstract class Model extends ModelBase {
      */
     public function deleteByMatch() {
 
-        $where = array();
-        if ($this->values) {
-            foreach ($this->values as $k => $v) {
-                if ($v === null) continue;
-                $where[] = " `$k` ='$v' ";
-            }
-            if ($this->condition['where']) {
-                $where[] = $this->condition['where'];
-            }
-        }
+        $w = $this->getWhere();
         // 不能清全表
-        if (!$where) {
+        if (!$w) {
+            $this->logError(ErrorCode::CANNOT_DELETE_ALL_TABLE);
             return false;
         }
 
-
         $sqlFactory = new SqlFactory();
         $sqlFactory->delete($this->tableName);
-        $sqlFactory->where($where);
+        $sqlFactory->where($w);
 
-        $db = Db::getConnection();
-        if ($db->query($sqlFactory->getSql())) {
-            return true;
-        }
-        return false;
+        $res = $this->dbConnection->delete($sqlFactory->getSql());
 
+        return $res;
     }
 
 
     /**
-     * 按唯一字段删除记录
-     * @param $key
+     * @param $field
      * @param $value
      * @return bool
      */
-    public function deleteByUniqueKey($key, $value) {
-        if (!$this->keyExists($key)) {
+    public function deleteByUniqueField($field, $value) {
+        if (!$this->isFieldExists($field)) {
             return false;
         }
 
         $sqlFactory = new SqlFactory();
         $sqlFactory->delete($this->tableName);
-        $sqlFactory->where(sprintf("%s='%s'", $key, $value));
+        $sqlFactory->where(sprintf("%s='%s'", $field, $value));
+        $res = $this->dbConnection->delete($sqlFactory->getSql());
 
-        $db = Db::getConnection();
-        if ($db->query($sqlFactory->getSql())) {
-            return true;
-        }
-        return false;
+        return $res;
     }
 
     /**
@@ -269,12 +198,8 @@ abstract class Model extends ModelBase {
         );
         $sqlFactory = new SqlFactory();
         $sqlFactory->insert($this->tableName, $data);
-        $db = Db::getConnection();
 
-        if ($db->query($sqlFactory->getSql())) {
-            return true;
-        }
-        return false;
+        return $this->dbConnection->insert($sqlFactory->getSql());
     }
 
     /**
@@ -282,7 +207,6 @@ abstract class Model extends ModelBase {
      * @return bool|resource
      */
     public function saveToDb() {
-
         // 没有值
         if (!$this->values) {
             return false;
@@ -293,9 +217,11 @@ abstract class Model extends ModelBase {
 
 
         $sqlFactory = new SqlFactory();
+        $insertId = false;
         if ($pkValue) {
-            // update
             // 主键赋值了，先探测是否存在；如果不存在，insert主键，先锁定主键id；
+            // update要保证主键已经存在
+            // 如果不存在，尝试先插入主键
             if (!$this->isPkExists($pkValue)) {
                 if (!$this->lockPk($pkValue)) {
                     return false;
@@ -306,21 +232,21 @@ abstract class Model extends ModelBase {
             $updateData = $this->values;
             unset($updateData[$this->primaryKey]);
             $sqlFactory->updateSet($this->tableName, $updateData);
-            $sql = $sqlFactory->getSql();
+            $this->dbConnection->update($sqlFactory->getSql());
         } else {
-
             $sqlFactory->insert($this->tableName, $this->values);
-            $sql = $sqlFactory->getSql();
+            $insertId = $this->dbConnection->insert($sqlFactory->getSql());
         }
 
-        $db = Db::getConnection();
-        if ($db->query($sql)) {
+
+        if ($insertId) {
             if ($sqlFactory->getType() == SqlFactory::SQL_INSERT) {
-                $this->setPk($db->insertId());
+                $this->setPk($insertId);
             }
             return true;
         }
         return false;
+
     }
 
 
@@ -332,58 +258,64 @@ abstract class Model extends ModelBase {
 
         $sqlFactory = new SqlFactory();
         $sqlFactory->selectFrom($this->tableName, 'COUNT(' . $this->primaryKey . ') as count');
+        $sqlFactory->where($this->getWhere());
 
+
+        return $this->dbConnection->getInt($sqlFactory->getSql());
+
+    }
+
+
+    /**
+     * @param $field
+     * @return mixed
+     */
+    public function getSum($field) {
+        $sqlFactory = new SqlFactory();
+        $sqlFactory->selectFrom($this->tableName, 'SUM(' . $field . ') as sum_value');
+        $sqlFactory->where($this->getWhere());
+
+        return $this->dbConnection->getInt($sqlFactory->getSql());
+    }
+
+
+    /**
+     * @return array
+     */
+    private function getWhere() {
         $where = array();
         if ($this->values) {
             foreach ($this->values as $k => $v) {
-                if ($v === null) continue;
+                if ($v === null) {
+                    continue;
+                }
                 $where[] = " `$k` ='$v' ";
             }
-            if (isset($this->condition['where'])) {
-                $where[] = $this->condition['where'];
+        }
+        if ($this->where) {
+            foreach ($this->where as $item) {
+                $where[] = $item;
             }
         }
-        if ($where) {
-            $sqlFactory->where($where);
-        }
-
-        $db = Db::getConnection();
-        if ($rs = $db->fetchOne($sqlFactory->getSql())) {
-            return intval($rs['count']);
-        }
-        return false;
-    }
-
-    /**
-     * 判断model是否具有这个字段
-     * @param $key
-     * @return bool
-     */
-    public function keyExists($key) {
-        if (in_array($key, $this->fields)) {
-            return true;
-        } else {
-            return false;
-        }
+        return $where;
     }
 
 
     /**
-     * 探测某个主键是否已经占用
-     * @param $pk
+     * @param $value
      * @return bool
      */
-    public function isPkExists($pk) {
-        if (!$pk || !$this->primaryKey) {
+    public function isPkExists($value) {
+        if (!$value || !$this->primaryKey) {
             return false;
         }
         $sqlFactory = new SqlFactory();
         $sqlFactory->selectFrom($this->tableName, $this->primaryKey);
-        $sqlFactory->where(array($this->primaryKey => $pk));
+        $sqlFactory->where(array($this->primaryKey . '=' . $value));
 
-        $db = Db::getConnection();
-        $qry = $db->query($sqlFactory->getSql());
-        if (!$qry || !($rs = $db->fetchArray($qry))) {
+        $ret = $this->dbConnection->getInt($sqlFactory->getSql());
+
+        if (!$ret) {
             return false;
         }
         return true;
@@ -391,40 +323,44 @@ abstract class Model extends ModelBase {
 
 
     /**
-     * 单字段做加法
-     * @param $key
+     * @param $field
      * @param int $num
-     * @return bool|resource
+     * @return bool
      */
-    public function increase($key, $num = 1) {
-
-        if (!$this->keyExists($key)) {
+    public function increase($field, $num = 1) {
+        if (!$this->isFieldExists($field)) {
             return false;
         }
 
-        $sql = "";
-        $sql .= "UPDATE " . $this->tableName . " SET $key = $key + $num ";
-        $sql .= "WHERE " . $this->primaryKey . " = " . $this->getPk();
-        $db = Db::getConnection();
-        return $db->query($sql);
+        $sqlFactory = new SqlFactory();
+        $sqlFactory->updateSet($this->tableName, array($field => "$field + $num "));
+        $where = array(
+            $this->primaryKey . " = " . $this->getPk()
+        );
+        $sqlFactory->where($where);
+
+        return $this->dbConnection->update($sqlFactory->getSql());
     }
 
     /**
-     * 单字段做减法
-     * @param $key
-     * @param $num
-     * @return bool|resource
+     * @param $field
+     * @param int $num
+     * @return bool
+     *
      */
-    public function decrease($key, $num = 1) {
-        if (!$this->keyExists($key)) {
+    public function decrease($field, $num = 1) {
+        if (!$this->isFieldExists($field)) {
             return false;
         }
 
-        $sql = "";
-        $sql .= "UPDATE " . $this->tableName . " SET $key = $key - $num ";
-        $sql .= "WHERE " . $this->primaryKey . " = " . $this->getPk();
-        $db = Db::getConnection();
-        $db->query($sql);
+        $sqlFactory = new SqlFactory();
+        $sqlFactory->updateSet($this->tableName, array($field => "$field - $num "));
+        $where = array(
+            $this->primaryKey . " = " . $this->getPk()
+        );
+        $sqlFactory->where($where);
+
+        return $this->dbConnection->update($sqlFactory->getSql());
     }
 
     /**
@@ -442,22 +378,36 @@ abstract class Model extends ModelBase {
     }
 
 
-    public function setOrder($field, $sort = 'desc') {
-        $this->condition['orderField'] = $field;
-        $this->condition['orderSort'] = $sort;
+    public function orderBy($field, $sort = 'desc') {
+        $this->orderBy = $field;
+        $this->orderSort = $sort;
+        return $this;
     }
 
-    /**
-     * @param $step
-     * @param int $start
-     */
-    public function setLimit($step, $start = 0) {
-        $this->condition['limitStep'] = $step;
-        $this->condition['limitStart'] = $start;
+
+    public function limit($step, $start = 0) {
+        $this->limitStep = $step;
+        $this->limitStart = $start;
+        return $this;
     }
 
-    public function setWhere($where) {
-        $this->condition['where'] = $where;
+    public function where($where) {
+        if (is_array($where)) {
+            foreach ($where as $item) {
+                $this->where[] = $item;
+            }
+        } else {
+            $this->where[] = $where;
+        }
+        return $this;
+    }
+
+    protected function logError($errorCode) {
+        $this->error[] = $errorCode;
+    }
+
+    public function getError() {
+        return $this->error;
     }
 
 }
