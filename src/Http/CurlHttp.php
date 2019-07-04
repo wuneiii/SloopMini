@@ -1,6 +1,6 @@
 <?php
 
-namespace SloopMini\Util\Http;
+namespace SloopMini\Http;
 
 class CurlHttp {
 

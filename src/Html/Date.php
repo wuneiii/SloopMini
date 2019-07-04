@@ -1,6 +1,6 @@
 <?php
 
-namespace SloopMini\Util\Html;
+namespace SloopMini\Html;
 
 class Date {
 
@@ -39,10 +39,10 @@ class Date {
     }
 
     /**
-     * 产生一个选择年份的下拉菜单
-     *
-     * @param mixed $name
-     * @param mixed $selected
+     * @param string $name
+     * @param int $selected
+     * @param string $class
+     * @return string
      */
     static function return_select_years($name = '', $selected = 1, $class = '') {
         $ret = '<select name="' . $name . '" class="' . $class . '">';

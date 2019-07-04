@@ -12,16 +12,6 @@ class Util {
         return strtoupper(substr($string, 0, 1)) . substr($string, 1);
     }
 
-    static public function getColor($ca, $cb) {
-        static $_sa = true;
-        if ($_sa) {
-            $_sa = false;
-            return $ca;
-        }
-        $_sa = true;
-        return $cb;
-
-    }
 
 
     static function getRealSize($size) {
@@ -46,16 +36,11 @@ class Util {
     }
 
 
-    //===================================返回大写文件扩展名==================================================
     static function getFileExt($filename) {
         $fileParts = explode(".", $filename);
         return strtolower($fileParts[count($fileParts) - 1]);
     }
 
-    function deleteHtml($content) {
-        $content = preg_replace('#<[^<>]+?>#s', '', $content);
-        return $content;
-    }
 
     function noRobot() {
         if (!defined('IS_ROBOT')) {

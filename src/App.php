@@ -11,7 +11,6 @@ namespace SloopMini;
 
 class App {
 
-    private $config         = [];
     private $strUrlMap      = [];
     private $regUrlMap      = [];
     private $defaultHandler = false;
@@ -20,15 +19,11 @@ class App {
         @date_default_timezone_set('PRC');
 
         if (file_exists('config.php')) {
-            $this->config = require 'config.php';
+            $config = require 'config.php';
+            if ($config) {
+                Config::getInstance()->loadConfig($config);
+            }
         }
-    }
-
-    public function getConfig($key) {
-        if (isset($this->config[$key])) {
-            return $this->config[$key];
-        }
-        return false;
     }
 
     public function regAppDir($dir) {
@@ -36,7 +31,7 @@ class App {
         $loader->registerNamespace('\App\\', $dir);
     }
 
-    public function addDefault($callback) {
+    public function addDefaultHandler($callback) {
         $this->defaultHandler = $callback;
     }
 

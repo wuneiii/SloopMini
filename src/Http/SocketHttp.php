@@ -1,5 +1,5 @@
 <?php
-namespace SloopMini\Util\Http;
+namespace SloopMini\Http;
 
 class SocketHttp {
 
@@ -22,7 +22,7 @@ class SocketHttp {
 
     public function __construct() {
         if (!function_exists('fsockopen')) {
-            throw new Exception('fsockopen function not exists');
+            throw new \Exception('fsockopen function not exists');
         }
         $this->setHeader('Accept', '*/*');
         $this->setHeader('Host', '');
