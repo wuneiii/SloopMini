@@ -13,8 +13,8 @@
   ],
   "require": {
     "php": ">=5.4",
-    "ext-mysqli": "*"
-    "ext-iconv": "*"
+    "ext-mysqli": "*",
+    "ext-iconv": "*",
     "ext-gd": "*"
   },
   "autoload": {
