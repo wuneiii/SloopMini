@@ -2,11 +2,11 @@
 
 use SloopMini\DataAccess\Db;
 
-$host = '182.92.214.249';
-$user = 'root';
-$passwd = 'Tiri!@#123';
+$host = '';
+$user = '';
+$passwd = '';
 $port = 3306;
-$dbname = 'xiaolong_minip_dujing';
+$dbname = '';
 
 
 Db::setConfig($host, $user, $passwd, $dbname, $port);
